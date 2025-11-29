@@ -3,6 +3,7 @@ package com.back.cryptotool.ui;
 import com.back.cryptotool.crypto.AesCipher;
 import com.back.cryptotool.crypto.CryptoManager;
 import com.back.cryptotool.crypto.CryptoException;
+import com.back.cryptotool.util.FileProcessor;
 
 import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -39,6 +40,20 @@ public class MainFrame extends JFrame {
     private JButton decryptBtn;
     private JButton clearBtn;
     private JComboBox<String> aesKeySizeComboBox;
+
+    // Компоненты для вкладки работы с файлами
+    private JTextField filePathField;
+    private JButton fileBrowseBtn;
+    private JButton encryptFileBtn;
+    private JButton decryptFileBtn;
+    private JButton clearFileBtn;
+    private JLabel fileInfoLabel;
+    private JComboBox<String> fileAlgorithmComboBox;
+    private JTextField fileKeyField;
+    private JComboBox<String> fileAesKeySizeComboBox;
+
+    private FileProcessor fileProcessor;
+    private File selectedFile;
 
     public MainFrame() {
         this.cryptoManager = new CryptoManager();
@@ -216,15 +231,115 @@ public class MainFrame extends JFrame {
     }
 
     /**
-     * Создает панель для работы с файлами (заглушка)
+     * Создает панель для работы с файлами
      */
     private JPanel createFilePanel() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        JLabel label = new JLabel("Работа с файлами - в разработке", JLabel.CENTER);
-        label.setFont(new Font("Arial", Font.BOLD, 16));
-        panel.add(label, BorderLayout.CENTER);
+        // Инициализируем FileProcessor
+        fileProcessor = new FileProcessor(cryptoManager);
+
+        // 1. Панель выбора файла
+        JPanel fileSelectionPanel = createFileSelectionPanel();
+
+        // 2. Панель управления
+        JPanel controlPanel = createFileControlPanel();
+
+        // Собираем главную панель
+        panel.add(fileSelectionPanel, BorderLayout.NORTH);
+        panel.add(controlPanel, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    /**
+     * Создает панель выбора файла
+     */
+    private JPanel createFileSelectionPanel() {
+        JPanel panel = new JPanel(new BorderLayout(5, 5));
+        panel.setBorder(BorderFactory.createTitledBorder("Выбор файла"));
+
+        JPanel topPanel = new JPanel(new BorderLayout(5, 5));
+
+        // Поле пути и кнопка обзора
+        JPanel pathPanel = new JPanel(new BorderLayout(5, 5));
+        pathPanel.add(new JLabel("Файл:"), BorderLayout.WEST);
+
+        filePathField = new JTextField();
+        filePathField.setEditable(false);
+        pathPanel.add(filePathField, BorderLayout.CENTER);
+
+        fileBrowseBtn = new JButton("📁 Обзор...");
+        pathPanel.add(fileBrowseBtn, BorderLayout.EAST);
+
+        // Информация о файле
+        fileInfoLabel = new JLabel("Выберите файл для обработки");
+        fileInfoLabel.setForeground(Color.GRAY);
+
+        topPanel.add(pathPanel, BorderLayout.NORTH);
+        topPanel.add(fileInfoLabel, BorderLayout.SOUTH);
+
+        panel.add(topPanel, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    /**
+     * Создает панель управления для файлов
+     */
+    private JPanel createFileControlPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("Настройки шифрования"));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.WEST;
+
+        // Алгоритм
+        gbc.gridx = 0; gbc.gridy = 0;
+        panel.add(new JLabel("Алгоритм:"), gbc);
+
+        gbc.gridx = 1; gbc.gridy = 0;
+        fileAlgorithmComboBox = new JComboBox<>(new String[]{"CAESAR", "VIGENERE", "AES"});
+        panel.add(fileAlgorithmComboBox, gbc);
+
+        // Размер ключа AES (изначально скрыт)
+        gbc.gridx = 0; gbc.gridy = 1;
+        JLabel aesSizeLabel = new JLabel("Размер ключа AES:");
+        panel.add(aesSizeLabel, gbc);
+
+        gbc.gridx = 1; gbc.gridy = 1;
+        fileAesKeySizeComboBox = new JComboBox<>(new String[]{"128 бит", "192 бита", "256 бит"});
+        fileAesKeySizeComboBox.setVisible(false);
+        aesSizeLabel.setVisible(false);
+        panel.add(fileAesKeySizeComboBox, gbc);
+
+        // Ключ
+        gbc.gridx = 0; gbc.gridy = 2;
+        panel.add(new JLabel("Ключ:"), gbc);
+
+        gbc.gridx = 1; gbc.gridy = 2;
+        fileKeyField = new JTextField();
+        panel.add(fileKeyField, gbc);
+
+        // Кнопки
+        gbc.gridx = 0; gbc.gridy = 3;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.CENTER;
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
+        encryptFileBtn = new JButton("🔒 Зашифровать файл");
+        decryptFileBtn = new JButton("🔓 Расшифровать файл");
+        clearFileBtn = new JButton("🗑️ Очистить");
+
+        buttonPanel.add(encryptFileBtn);
+        buttonPanel.add(decryptFileBtn);
+        buttonPanel.add(clearFileBtn);
+
+        panel.add(buttonPanel, gbc);
 
         return panel;
     }
@@ -280,6 +395,30 @@ public class MainFrame extends JFrame {
 
         // Изначально обновляем подсказку
         updateKeyTooltip();
+
+        // Обработчики для вкладки файлов
+        setupFileEventListeners();
+    }
+
+    /**
+     * Настройка обработчиков для вкладки файлов
+     */
+    private void setupFileEventListeners() {
+        // Кнопка выбора файла
+        fileBrowseBtn.addActionListener(e -> onFileBrowse());
+
+        // Кнопки шифрования/дешифрования файлов
+        encryptFileBtn.addActionListener(e -> onEncryptFile());
+        decryptFileBtn.addActionListener(e -> onDecryptFile());
+
+        // Кнопка очистки файлов
+        clearFileBtn.addActionListener(e -> onClearFile());
+
+        // Изменение алгоритма для файлов
+        fileAlgorithmComboBox.addActionListener(e -> onFileAlgorithmChanged());
+
+        // Изменение размера ключа AES для файлов
+        fileAesKeySizeComboBox.addActionListener(e -> onFileAesKeySizeChanged());
     }
 
     /**
@@ -406,6 +545,344 @@ public class MainFrame extends JFrame {
             if (keySize != null) {
                 cryptoManager.setAesKeySize(keySize);
                 updateKeyTooltip(); // Обновляем подсказку
+            }
+        } catch (CryptoException e) {
+            showError("Ошибка настройки AES: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Обработчик выбора файла
+     */
+    private void onFileBrowse() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Выберите файл для обработки");
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+
+        // Настраиваем фильтр файлов
+        setupFileFilters(fileChooser);
+
+        int result = fileChooser.showOpenDialog(this);
+
+        if (result == JFileChooser.APPROVE_OPTION) {
+            selectedFile = fileChooser.getSelectedFile();
+            updateFileInfo();
+        }
+    }
+
+    /**
+     * Настраивает фильтры файлов
+     */
+    private void setupFileFilters(JFileChooser fileChooser) {
+        // Разрешённые расширения
+        String[] allowedExtensions = {
+                "txt", "pdf", "doc", "docx", "rtf",  // Документы
+                "jpg", "jpeg", "png", "gif", "bmp",  // Изображения
+                "mp3", "wav", "flac",                // Аудио
+                "mp4", "avi", "mkv",                 // Видео
+                "zip", "rar", "7z",                  // Архивы
+                "enc"                                // Зашифрованные файлы
+        };
+
+        FileNameExtensionFilter allAllowedFilter = new FileNameExtensionFilter(
+                "Все разрешённые файлы", allowedExtensions);
+
+        FileNameExtensionFilter documentsFilter = new FileNameExtensionFilter(
+                "Документы (*.txt, *.pdf, *.doc, *.docx)", "txt", "pdf", "doc", "docx", "rtf");
+
+        FileNameExtensionFilter imagesFilter = new FileNameExtensionFilter(
+                "Изображения (*.jpg, *.png, *.gif)", "jpg", "jpeg", "png", "gif", "bmp");
+
+        FileNameExtensionFilter encryptedFilter = new FileNameExtensionFilter(
+                "Зашифрованные файлы (*.enc)", "enc");
+
+        FileNameExtensionFilter allFilesFilter = new FileNameExtensionFilter(
+                "Все файлы (*.*)", "*");
+
+        fileChooser.addChoosableFileFilter(documentsFilter);
+        fileChooser.addChoosableFileFilter(imagesFilter);
+        fileChooser.addChoosableFileFilter(encryptedFilter);
+        fileChooser.addChoosableFileFilter(allAllowedFilter);
+        fileChooser.addChoosableFileFilter(allFilesFilter);
+        fileChooser.setFileFilter(allAllowedFilter);
+    }
+
+    /**
+     * Обновляет информацию о выбранном файле
+     */
+    private void updateFileInfo() {
+        if (selectedFile != null && selectedFile.exists()) {
+            filePathField.setText(selectedFile.getAbsolutePath());
+
+            String fileSize = FileProcessor.formatFileSize(selectedFile.length());
+            String fileType = getFileType(selectedFile);
+            String status = "✅ " + fileType + " (" + fileSize + ")";
+
+            // Проверяем размер файла
+            if (selectedFile.length() > FileProcessor.getMaxFileSize()) {
+                status = "❌ Слишком большой: " + fileSize + " (максимум 50 МБ)";
+                fileInfoLabel.setForeground(Color.RED);
+                encryptFileBtn.setEnabled(false);
+                decryptFileBtn.setEnabled(false);
+            } else {
+                fileInfoLabel.setForeground(Color.BLACK);
+
+                // Автоматически определяем операцию по расширению
+                if (selectedFile.getName().toLowerCase().endsWith(".enc")) {
+                    decryptFileBtn.setEnabled(true);
+                    encryptFileBtn.setEnabled(false);
+                } else {
+                    encryptFileBtn.setEnabled(true);
+                    decryptFileBtn.setEnabled(true);
+                }
+            }
+
+            fileInfoLabel.setText(status);
+        } else {
+            // Очистка полей
+            filePathField.setText("");
+            fileInfoLabel.setText("Файл не выбран");
+            fileInfoLabel.setForeground(Color.GRAY);
+            encryptFileBtn.setEnabled(false);
+            decryptFileBtn.setEnabled(false);
+        }
+    }
+
+    /**
+     * Определяет тип файла для отображения
+     */
+    private String getFileType(File file) {
+        String name = file.getName().toLowerCase();
+
+        if (name.endsWith(".enc")) return "Зашифрованный файл";
+        if (name.endsWith(".txt")) return "Текстовый файл";
+        if (name.endsWith(".pdf")) return "PDF документ";
+        if (name.endsWith(".doc") || name.endsWith(".docx")) return "Word документ";
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")) return "Изображение";
+        if (name.endsWith(".mp3") || name.endsWith(".wav")) return "Аудио файл";
+        if (name.endsWith(".mp4") || name.endsWith(".avi")) return "Видео файл";
+        if (name.endsWith(".zip") || name.endsWith(".rar")) return "Архив";
+
+        return "Файл";
+    }
+
+    /**
+     * Обработчик очистки для вкладки файлов
+     */
+    private void onClearFile() {
+        // Сбрасываем выбранный файл
+        selectedFile = null;
+        filePathField.setText("");
+        fileInfoLabel.setText("Файл не выбран");
+        fileInfoLabel.setForeground(Color.GRAY);
+
+        // Очищаем поле ключа
+        fileKeyField.setText("");
+
+        // Сбрасываем алгоритм к значению по умолчанию
+        fileAlgorithmComboBox.setSelectedIndex(0);
+
+        // Скрываем выбор размера ключа AES
+        fileAesKeySizeComboBox.setVisible(false);
+
+        // Отключаем кнопки операций
+        encryptFileBtn.setEnabled(false);
+        decryptFileBtn.setEnabled(false);
+
+        // Показываем сообщение
+        showInfo("Поля вкладки файлов очищены");
+    }
+
+    /**
+     * Обработчик шифрования файла
+     */
+    private void onEncryptFile() {
+        if (selectedFile == null) {
+            showError("Сначала выберите файл для шифрования");
+            return;
+        }
+
+        try {
+            String algorithm = (String) fileAlgorithmComboBox.getSelectedItem();
+            String key = fileKeyField.getText().trim();
+
+            if (key.isEmpty()) {
+                showError("Введите ключ для шифрования");
+                return;
+            }
+
+            // Проверяем, не является ли файл уже зашифрованным
+            if (selectedFile.getName().toLowerCase().endsWith(".enc")) {
+                int result = JOptionPane.showConfirmDialog(this,
+                        "Этот файл уже зашифрован. Вы уверены, что хотите зашифровать его повторно?",
+                        "Подтверждение повторного шифрования",
+                        JOptionPane.YES_NO_OPTION);
+
+                if (result != JOptionPane.YES_OPTION) {
+                    return;
+                }
+            }
+
+            // Выполняем шифрование
+            File encryptedFile = fileProcessor.encryptFile(selectedFile, algorithm, key);
+
+            // Показываем результат
+            showFileOperationSuccess("шифрования", encryptedFile, selectedFile);
+
+        } catch (CryptoException e) {
+            showError("Ошибка шифрования: " + e.getMessage());
+        } catch (IOException e) {
+            showError("Ошибка работы с файлом: " + e.getMessage());
+        } catch (Exception e) {
+            showError("Неожиданная ошибка: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Обработчик дешифрования файла
+     */
+    private void onDecryptFile() {
+        if (selectedFile == null) {
+            showError("Сначала выберите файл для дешифрования");
+            return;
+        }
+
+        try {
+            String algorithm = (String) fileAlgorithmComboBox.getSelectedItem();
+            String key = fileKeyField.getText().trim();
+
+            if (key.isEmpty()) {
+                showError("Введите ключ для дешифрования");
+                return;
+            }
+
+            // Проверяем, является ли файл зашифрованным
+            if (!selectedFile.getName().toLowerCase().endsWith(".enc")) {
+                int result = JOptionPane.showConfirmDialog(this,
+                        "Этот файл не имеет расширения .enc. Вы уверены, что хотите попытаться его дешифровать?",
+                        "Подтверждение дешифрования",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.WARNING_MESSAGE);
+
+                if (result != JOptionPane.YES_OPTION) {
+                    return;
+                }
+            }
+
+            // Проверяем существование выходного файла
+            File outputFile = fileProcessor.restoreOriginalFileName(selectedFile);
+            if (outputFile.exists()) {
+                int overwrite = JOptionPane.showConfirmDialog(this,
+                        "Файл \"" + outputFile.getName() + "\" уже существует. Перезаписать его?",
+                        "Подтверждение перезаписи",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.WARNING_MESSAGE);
+
+                if (overwrite != JOptionPane.YES_OPTION) {
+                    return;
+                }
+            }
+
+            // Выполняем дешифрование
+            File decryptedFile = fileProcessor.decryptFile(selectedFile, algorithm, key);
+
+            // Показываем результат
+            showFileOperationSuccess("дешифрования", decryptedFile, selectedFile);
+
+        } catch (CryptoException e) {
+            showError("Ошибка дешифрования: " + e.getMessage());
+        } catch (IOException e) {
+            showError("Ошибка работы с файлом: " + e.getMessage());
+        } catch (Exception e) {
+            showError("Неожиданная ошибка: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Показывает сообщение об успешной операции с файлом
+     */
+    private void showFileOperationSuccess(String operation, File resultFile, File originalFile) {
+        String originalSize = FileProcessor.formatFileSize(originalFile.length());
+        String resultSize = FileProcessor.formatFileSize(resultFile.length());
+
+        String message = String.format("""
+        Файл успешно обработан!
+        
+        Операция: %s
+        Исходный файл: %s (%s)
+        Результат: %s (%s)
+        Путь: %s
+        """,
+                operation,
+                originalFile.getName(),
+                originalSize,
+                resultFile.getName(),
+                resultSize,
+                resultFile.getParent()
+        );
+
+        JOptionPane.showMessageDialog(this, message, "Операция завершена",
+                JOptionPane.INFORMATION_MESSAGE);
+
+        // Обновляем информацию о файле
+        updateFileInfo();
+    }
+
+    /**
+     * Обработчик изменения алгоритма для файлов
+     */
+    private void onFileAlgorithmChanged() {
+        String algorithm = (String) fileAlgorithmComboBox.getSelectedItem();
+        boolean isAes = "AES".equals(algorithm);
+
+        // Находим компоненты в панели управления файлами
+        Component[] components = ((JPanel)tabbedPane.getComponentAt(1)).getComponents();
+        JPanel controlPanel = (JPanel) components[1];
+
+        // Ищем label и comboBox для размера ключа AES
+        for (Component comp : controlPanel.getComponents()) {
+            if (comp instanceof JLabel) {
+                JLabel label = (JLabel) comp;
+                if ("Размер ключа AES:".equals(label.getText())) {
+                    label.setVisible(isAes);
+                }
+            }
+        }
+
+        // Показываем/скрываем выбор размера ключа для AES
+        fileAesKeySizeComboBox.setVisible(isAes);
+
+        // Если выбран AES, обновляем требования к ключу
+        if (isAes) {
+            onFileAesKeySizeChanged();
+        }
+
+        controlPanel.revalidate();
+        controlPanel.repaint();
+    }
+
+    /**
+     * Обработчик изменения размера ключа AES для файлов
+     */
+    private void onFileAesKeySizeChanged() {
+        try {
+            String selectedSize = (String) fileAesKeySizeComboBox.getSelectedItem();
+            AesCipher.KeySize keySize = null;
+
+            switch (selectedSize) {
+                case "128 бит":
+                    keySize = AesCipher.KeySize.AES_128;
+                    break;
+                case "192 бита":
+                    keySize = AesCipher.KeySize.AES_192;
+                    break;
+                case "256 бит":
+                    keySize = AesCipher.KeySize.AES_256;
+                    break;
+            }
+
+            if (keySize != null) {
+                cryptoManager.setAesKeySize(keySize);
             }
         } catch (CryptoException e) {
             showError("Ошибка настройки AES: " + e.getMessage());
